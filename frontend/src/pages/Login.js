@@ -59,7 +59,7 @@ export default function Login() {
 
         <div style={styles.hint}>
           <p style={{ color: "var(--muted)", fontSize: 12, textAlign: "center" }}>
-            Admin: admin@bank.com / Admin@1234
+            Tushar Sawale || tusharsawale49@gmail.com
           </p>
         </div>
       </div>
