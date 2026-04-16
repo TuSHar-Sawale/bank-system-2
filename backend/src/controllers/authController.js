@@ -2,77 +2,105 @@ const User = require("../models/User");
 const Account = require("../models/Account");
 const jwt = require("jsonwebtoken");
 
+// Helper to generate JWT Token
 const generateToken = (id) =>
   jwt.sign({ id }, process.env.JWT_SECRET, { expiresIn: "7d" });
 
-// POST /api/auth/register
-// POST /api/auth/register
+// @desc    Register new user & create account
+// @route   POST /api/auth/register
 const register = async (req, res) => {
   try {
     const { name, email, password } = req.body;
 
+    // 1. Validation
+    if (!name || !email || !password) {
+      return res.status(400).json({ message: "All fields are required" });
+    }
+
+    // 2. Check if user exists
     const exists = await User.findOne({ email });
-    if (exists) return res.status(400).json({ message: "Email already registered" });
+    if (exists) {
+      return res.status(400).json({ message: "Email already registered" });
+    }
 
-    const user = await User.create({ name, email, password, isActive: true });
-
-    // We do NOT pass accountId here; let the Model's 'default' function handle it
-    await Account.create({ 
-      userId: user._id, 
-      balance: 0, 
-      status: "active" 
+    // 3. Create User (isActive: true means no admin approval needed)
+    const user = await User.create({
+      name,
+      email,
+      password,
+      role: "customer",
+      isActive: true,
     });
 
-    res.status(201).json({ message: "Success" });
-  } catch (err) {
-    // This will help you see exactly which field is failing
-    console.error("Registration Error:", err); 
-    res.status(500).json({ message: err.message });
-  }
-};
-
-    // 2. Create the Account immediately with status 'active'
-    await Account.create({ 
-      userId: user._id, 
+    // 4. Create Bank Account for the user immediately
+    // Note: accountId is generated automatically by the Account Model default function
+    await Account.create({
+      userId: user._id,
+      balance: 0,
       accountType: "savings",
-      status: "active", // Set to active immediately
-      balance: 0 
+      status: "active",
     });
 
     res.status(201).json({
-      message: "Registration successful. You can now login.",
-      user: { id: user._id, name: user.name, email: user.email, role: user.role },
+      message: "Registration successful!",
+      user: {
+        id: user._id,
+        name: user.name,
+        email: user.email,
+        role: user.role,
+      },
     });
   } catch (err) {
+    console.error("Register Error:", err.message);
     res.status(500).json({ message: err.message });
   }
 };
 
-// POST /api/auth/login
+// @desc    Login user
+// @route   POST /api/auth/login
 const login = async (req, res) => {
   try {
     const { email, password } = req.body;
+
+    // 1. Find user
     const user = await User.findOne({ email });
 
-    if (!user || !(await user.matchPassword(password)))
-      return res.status(401).json({ message: "Invalid email or password" });
+    // 2. Check password
+    if (user && (await user.matchPassword(password))) {
+      
+      // 3. Check if active (just in case admin freezes them later)
+      if (!user.isActive && user.role !== "admin") {
+        return res.status(403).json({ message: "Your account is disabled. Contact support." });
+      }
 
-    if (!user.isActive && user.role !== "admin")
-      return res.status(403).json({ message: "Account pending admin approval" });
-
-    res.json({
-      token: generateToken(user._id),
-      user: { id: user._id, name: user.name, email: user.email, role: user.role },
-    });
+      res.json({
+        token: generateToken(user._id),
+        user: {
+          id: user._id,
+          name: user.name,
+          email: user.email,
+          role: user.role,
+        },
+      });
+    } else {
+      res.status(401).json({ message: "Invalid email or password" });
+    }
   } catch (err) {
+    console.error("Login Error:", err.message);
     res.status(500).json({ message: err.message });
   }
 };
 
-// GET /api/auth/me
+// @desc    Get current user profile
+// @route   GET /api/auth/me
 const getMe = async (req, res) => {
-  const user = req.user;
-  res.json({ id: user._id, name: user.name, email: user.email, role: user.role });
+  try {
+    // req.user is set by the protect middleware
+    const user = await User.findById(req.user._id).select("-password");
+    res.json(user);
+  } catch (err) {
+    res.status(500).json({ message: err.message });
+  }
 };
 
 module.exports = { register, login, getMe };
