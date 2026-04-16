@@ -17,7 +17,7 @@ const accountSchema = new mongoose.Schema(
     status: {
       type: String,
       enum: ["active", "frozen", "pending"],
-      default: "pending",
+      default: "active",
     },
   },
   { timestamps: true }
