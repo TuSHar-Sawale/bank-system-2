@@ -2,17 +2,16 @@ const mongoose = require("mongoose");
 
 const accountSchema = new mongoose.Schema(
   {
-    // Use accountId consistently
     accountId: {
       type: String,
       unique: true,
-      // This function generates a unique number every time
+      // Generates a random account number like ACC123456
       default: () => "ACC" + Math.floor(100000 + Math.random() * 900000), 
     },
     userId: { type: mongoose.Schema.Types.ObjectId, ref: "User", required: true },
     balance: { type: Number, default: 0 },
-    accountType: { type: String, default: "savings" },
-    status: { type: String, default: "active" },
+    accountType: { type: String, enum: ["savings", "checking"], default: "savings" },
+    status: { type: String, enum: ["active", "frozen"], default: "active" },
   },
   { timestamps: true }
 );
