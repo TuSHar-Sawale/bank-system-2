@@ -6,6 +6,7 @@ const generateToken = (id) =>
   jwt.sign({ id }, process.env.JWT_SECRET, { expiresIn: "7d" });
 
 // POST /api/auth/register
+// POST /api/auth/register
 const register = async (req, res) => {
   try {
     const { name, email, password } = req.body;
@@ -15,13 +16,24 @@ const register = async (req, res) => {
     const exists = await User.findOne({ email });
     if (exists) return res.status(400).json({ message: "Email already registered" });
 
-    const user = await User.create({ name, email, password });
+    // 1. Create User (isActive: true by default based on your previous request)
+    const user = await User.create({ 
+      name, 
+      email, 
+      password, 
+      isActive: true // User is active immediately
+    });
 
-    // Auto-create a pending account for the user
-    await Account.create({ userId: user._id, accountType: "savings" });
+    // 2. Create the Account immediately with status 'active'
+    await Account.create({ 
+      userId: user._id, 
+      accountType: "savings",
+      status: "active", // Set to active immediately
+      balance: 0 
+    });
 
     res.status(201).json({
-      message: "Registration successful. Waiting for admin approval.",
+      message: "Registration successful. You can now login.",
       user: { id: user._id, name: user.name, email: user.email, role: user.role },
     });
   } catch (err) {
