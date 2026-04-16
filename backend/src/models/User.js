@@ -7,7 +7,7 @@ const userSchema = new mongoose.Schema(
     email: { type: String, required: true, unique: true, lowercase: true },
     password: { type: String, required: true },
     role: { type: String, enum: ["customer", "admin"], default: "customer" },
-    isActive: { type: Boolean, default: false }, // Admin must approve
+    isActive: { type: Boolean, default: true }, // Admin must approve
   },
   { timestamps: true }
 );
