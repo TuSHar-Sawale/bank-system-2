@@ -10,19 +10,26 @@ const generateToken = (id) =>
 const register = async (req, res) => {
   try {
     const { name, email, password } = req.body;
-    if (!name || !email || !password)
-      return res.status(400).json({ message: "All fields are required" });
 
     const exists = await User.findOne({ email });
     if (exists) return res.status(400).json({ message: "Email already registered" });
 
-    // 1. Create User (isActive: true by default based on your previous request)
-    const user = await User.create({ 
-      name, 
-      email, 
-      password, 
-      isActive: true // User is active immediately
+    const user = await User.create({ name, email, password, isActive: true });
+
+    // We do NOT pass accountId here; let the Model's 'default' function handle it
+    await Account.create({ 
+      userId: user._id, 
+      balance: 0, 
+      status: "active" 
     });
+
+    res.status(201).json({ message: "Success" });
+  } catch (err) {
+    // This will help you see exactly which field is failing
+    console.error("Registration Error:", err); 
+    res.status(500).json({ message: err.message });
+  }
+};
 
     // 2. Create the Account immediately with status 'active'
     await Account.create({ 
