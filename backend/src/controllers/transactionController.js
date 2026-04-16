@@ -2,14 +2,27 @@ const Account = require("../models/Account");
 const Transaction = require("../models/Transaction");
 
 // POST /api/transactions/deposit
+// POST /api/transactions/deposit
 const deposit = async (req, res) => {
   try {
     const { amount } = req.body;
     if (!amount || amount <= 0) return res.status(400).json({ message: "Invalid amount" });
 
-    const account = await Account.findOne({ userId: req.user._id });
-    if (!account) return res.status(404).json({ message: "Account not found" });
-    if (account.status !== "active") return res.status(403).json({ message: "Account is not active" });
+    // Look for the account
+    let account = await Account.findOne({ userId: req.user._id });
+
+    // FIX: If account doesn't exist, create it now
+    if (!account) {
+      account = await Account.create({ 
+        userId: req.user._id, 
+        status: "active", 
+        balance: 0 
+      });
+    }
+
+    if (account.status !== "active") {
+        return res.status(403).json({ message: "Account is frozen or inactive" });
+    }
 
     account.balance += Number(amount);
     await account.save();
