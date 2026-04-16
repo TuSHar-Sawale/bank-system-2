@@ -1,27 +1,37 @@
 const Account = require("../models/Account");
 const Transaction = require("../models/Transaction");
+const User = require("../models/User");
 
-// POST /api/transactions/deposit
-// POST /api/transactions/deposit
+// Search users by name for transfer
+const searchUsers = async (req, res) => {
+  try {
+    const { name } = req.query;
+    if (!name) return res.json([]);
+
+    const users = await User.find({
+      name: { $regex: name, $options: "i" },
+      role: "customer",
+      _id: { $ne: req.user._id } // Don't show yourself
+    }).limit(5);
+
+    const results = await Promise.all(users.map(async (u) => {
+      const acc = await Account.findOne({ userId: u._id });
+      return { name: u.name, accountId: acc?.accountId };
+    }));
+
+    res.json(results);
+  } catch (err) {
+    res.status(500).json({ message: err.message });
+  }
+};
+
 const deposit = async (req, res) => {
   try {
     const { amount } = req.body;
-    if (!amount || amount <= 0) return res.status(400).json({ message: "Invalid amount" });
-
-    // Look for the account
     let account = await Account.findOne({ userId: req.user._id });
 
-    // FIX: If account doesn't exist, create it now
     if (!account) {
-      account = await Account.create({ 
-        userId: req.user._id, 
-        status: "active", 
-        balance: 0 
-      });
-    }
-
-    if (account.status !== "active") {
-        return res.status(403).json({ message: "Account is frozen or inactive" });
+      account = await Account.create({ userId: req.user._id, status: "active", balance: 0 });
     }
 
     account.balance += Number(amount);
@@ -34,98 +44,66 @@ const deposit = async (req, res) => {
       description: "Cash deposit",
     });
 
-    res.json({ message: "Deposit successful", balance: account.balance, transaction: txn });
+    res.json({ message: "Deposit successful", balance: account.balance });
   } catch (err) {
     res.status(500).json({ message: err.message });
   }
 };
 
-// POST /api/transactions/withdraw
 const withdraw = async (req, res) => {
   try {
     const { amount } = req.body;
-    if (!amount || amount <= 0) return res.status(400).json({ message: "Invalid amount" });
-
     const account = await Account.findOne({ userId: req.user._id });
-    if (!account) return res.status(404).json({ message: "Account not found" });
-    if (account.status !== "active") return res.status(403).json({ message: "Account is not active" });
-    if (account.balance < amount) return res.status(400).json({ message: "Insufficient balance" });
+    if (!account || account.balance < amount) return res.status(400).json({ message: "Insufficient funds" });
 
     account.balance -= Number(amount);
     await account.save();
 
-    const txn = await Transaction.create({
-      senderId: account._id,
-      amount,
-      type: "withdrawal",
-      description: "Cash withdrawal",
-    });
-
-    res.json({ message: "Withdrawal successful", balance: account.balance, transaction: txn });
+    await Transaction.create({ senderId: account._id, amount, type: "withdrawal" });
+    res.json({ message: "Success", balance: account.balance });
   } catch (err) {
     res.status(500).json({ message: err.message });
   }
 };
 
-// POST /api/transactions/transfer
 const transfer = async (req, res) => {
   try {
-    const { toAccountId, amount, description } = req.body;
-    if (!toAccountId || !amount || amount <= 0)
-      return res.status(400).json({ message: "Invalid transfer details" });
+    const { toAccountId, amount } = req.body;
+    const sender = await Account.findOne({ userId: req.user._id });
+    const receiver = await Account.findOne({ accountId: toAccountId });
 
-    const senderAccount = await Account.findOne({ userId: req.user._id });
-    if (!senderAccount) return res.status(404).json({ message: "Your account not found" });
-    if (senderAccount.status !== "active") return res.status(403).json({ message: "Your account is not active" });
-    if (senderAccount.balance < amount) return res.status(400).json({ message: "Insufficient balance" });
+    if (!receiver) return res.status(404).json({ message: "Recipient not found" });
+    if (sender.balance < amount) return res.status(400).json({ message: "Insufficient balance" });
 
-    const receiverAccount = await Account.findOne({ accountId: toAccountId });
-    if (!receiverAccount) return res.status(404).json({ message: "Recipient account not found" });
-    if (receiverAccount.status !== "active") return res.status(403).json({ message: "Recipient account is not active" });
-    if (senderAccount._id.equals(receiverAccount._id))
-      return res.status(400).json({ message: "Cannot transfer to same account" });
+    sender.balance -= Number(amount);
+    receiver.balance += Number(amount);
 
-    senderAccount.balance -= Number(amount);
-    receiverAccount.balance += Number(amount);
-    await senderAccount.save();
-    await receiverAccount.save();
+    await sender.save();
+    await receiver.save();
 
-    const txn = await Transaction.create({
-      senderId: senderAccount._id,
-      receiverId: receiverAccount._id,
+    await Transaction.create({
+      senderId: sender._id,
+      receiverId: receiver._id,
       amount,
-      type: "transfer",
-      description: description || "Fund transfer",
+      type: "transfer"
     });
 
-    res.json({ message: "Transfer successful", balance: senderAccount.balance, transaction: txn });
+    res.json({ message: "Transfer successful", balance: sender.balance });
   } catch (err) {
     res.status(500).json({ message: err.message });
   }
 };
 
-// GET /api/transactions
 const getTransactions = async (req, res) => {
   try {
     const account = await Account.findOne({ userId: req.user._id });
-    if (!account) return res.status(404).json({ message: "Account not found" });
-
-    const { type, startDate, endDate } = req.query;
-    const filter = {
-      $or: [{ senderId: account._id }, { receiverId: account._id }],
-    };
-    if (type) filter.type = type;
-    if (startDate || endDate) {
-      filter.createdAt = {};
-      if (startDate) filter.createdAt.$gte = new Date(startDate);
-      if (endDate) filter.createdAt.$lte = new Date(endDate);
-    }
-
-    const transactions = await Transaction.find(filter).sort({ createdAt: -1 });
-    res.json(transactions);
+    const txns = await Transaction.find({
+      $or: [{ senderId: account._id }, { receiverId: account._id }]
+    }).sort({ createdAt: -1 });
+    res.json(txns);
   } catch (err) {
     res.status(500).json({ message: err.message });
   }
 };
 
-module.exports = { deposit, withdraw, transfer, getTransactions };
+module.exports = { deposit, withdraw, transfer, getTransactions, searchUsers };
