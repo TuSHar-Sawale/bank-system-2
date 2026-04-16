@@ -1,27 +1,20 @@
 const mongoose = require("mongoose");
-const bcrypt = require("bcryptjs");
 
-const userSchema = new mongoose.Schema(
+const accountSchema = new mongoose.Schema(
   {
-    name: { type: String, required: true, trim: true },
-    email: { type: String, required: true, unique: true, lowercase: true },
-    password: { type: String, required: true },
-    role: { type: String, enum: ["customer", "admin"], default: "customer" },
-    isActive: { type: Boolean, default: true }, // Admin must approve
+    // Ensure this matches exactly what you use in your controllers
+    accountId: {
+      type: String,
+      unique: true,
+      // This function generates a unique ID if one isn't provided
+      default: () => "ACC" + Date.now() + Math.floor(Math.random() * 1000),
+    },
+    userId: { type: mongoose.Schema.Types.ObjectId, ref: "User", required: true },
+    balance: { type: Number, default: 0 },
+    accountType: { type: String, default: "savings" },
+    status: { type: String, default: "active" }, // We set this to active by default now
   },
   { timestamps: true }
 );
 
-// Hash password before saving
-userSchema.pre("save", async function (next) {
-  if (!this.isModified("password")) return next();
-  this.password = await bcrypt.hash(this.password, 10);
-  next();
-});
-
-// Compare password
-userSchema.methods.matchPassword = async function (enteredPassword) {
-  return await bcrypt.compare(enteredPassword, this.password);
-};
-
-module.exports = mongoose.model("User", userSchema);
+module.exports = mongoose.model("Account", accountSchema);
